@@ -153,65 +153,24 @@ where
 			return None;
 		}
 		let mut cur = &self.arena[self.root_id];
-		'tree: loop {
-			if cur.vals.len() > 0 {
-				if &val < cur.vals.first().unwrap() {
-					match cur.children.first() {
-						None => return Some((cur.idx, 0, false)),
-						Some(&id) => {
-							cur = &self.arena[id];
-							continue;
-						}
-					}
+		loop {
+			let mut insert_idx = cur.vals.len();
+			let mut found = false;
+			for (idx, &begin) in cur.vals.iter().enumerate() {
+				if val > begin {
+					continue;
 				}
-				if cur.vals.len() > 1 {
-					let mut iter = cur.vals.windows(2);
-					let mut idx = 1;
-					loop {
-						match iter.next() {
-							Some(&[begin, end]) => {
-								if begin == val {
-									return Some((
-										cur.idx, idx, true,
-									));
-								}
-								if begin < val && val < end {
-									let uidx = idx as usize;
-									if cur.children.len() < uidx
-									{
-										return Some((
-											cur.idx,
-											idx, false,
-										));
-									}
-									cur = &self.arena[cur
-										.children[uidx]];
-									continue 'tree;
-								}
-							}
-							None => break,
-							_ => unreachable!(),
-						}
-						idx += 1;
-					}
+				insert_idx = idx;
+				if val == begin {
+					found = true
 				}
-				if &val > cur.vals.last().unwrap() {
-					match cur.children.last() {
-						None => {
-							return Some((
-								cur.idx,
-								cur.vals.len(),
-								false,
-							))
-						}
-						Some(&id) => {
-							cur = &self.arena[id];
-							continue;
-						}
-					}
-				}
+				break;
 			}
-			return Some((cur.idx, cur.vals.len(), false));
+			if cur.children.len() > insert_idx {
+				cur = &self.arena[cur.children[insert_idx]];
+				continue;
+			}
+			return Some((cur.idx, insert_idx, found));
 		}
 	}
 
