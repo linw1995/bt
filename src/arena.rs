@@ -198,6 +198,34 @@ where
 		}
 		path
 	}
+
+	pub fn traversal_bfs_groupby_level(&self) -> Vec<Vec<T>> {
+		use std::collections::VecDeque;
+		let mut q = VecDeque::with_capacity(self.arena.len());
+		let mut cur = &self.arena[self.root_id];
+
+		let mut path = Vec::new();
+		let mut depth = 0;
+		loop {
+			if depth >= path.len() {
+				path.push(Vec::new());
+			}
+			for &val in cur.vals.iter() {
+				path[depth].push(val);
+			}
+			for &child_id in cur.children.iter() {
+				q.push_back((child_id, depth + 1));
+			}
+			match q.pop_front() {
+				Some((id, _depth)) => {
+					cur = &self.arena[id];
+					depth = _depth
+				}
+				None => break,
+			}
+		}
+		path
+	}
 }
 
 #[test]
@@ -306,4 +334,9 @@ fn traversal_bfs() {
 	}
 
 	assert_eq!(t.traversal_bfs(), vec![4, 2, 6, 1, 3, 5, 7]);
+
+	assert_eq!(
+		t.traversal_bfs_groupby_level(),
+		vec![vec![4], vec![2, 6], vec![1, 3, 5, 7]]
+	);
 }
