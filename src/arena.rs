@@ -177,6 +177,27 @@ where
 	pub fn range(&self, begin: T, end: T) -> Vec<T> {
 		todo!();
 	}
+
+	pub fn traversal_bfs(&self) -> Vec<T> {
+		use std::collections::VecDeque;
+		let mut q = VecDeque::with_capacity(self.arena.len());
+		let mut cur = &self.arena[self.root_id];
+
+		let mut path = Vec::new();
+		loop {
+			for &val in cur.vals.iter() {
+				path.push(val);
+			}
+			for &child_id in cur.children.iter() {
+				q.push_back(child_id);
+			}
+			match q.pop_front() {
+				Some(id) => cur = &self.arena[id],
+				None => break,
+			}
+		}
+		path
+	}
 }
 
 #[test]
@@ -274,4 +295,15 @@ fn insert_4() {
 	assert_eq!(left.vals, vec![2]);
 	let right = &t.arena[root.children[1]];
 	assert_eq!(right.vals, vec![6]);
+}
+
+#[test]
+fn traversal_bfs() {
+	let mut t = Tree::default();
+	t.m = 3;
+	for val in 1..8 {
+		t.insert(val);
+	}
+
+	assert_eq!(t.traversal_bfs(), vec![4, 2, 6, 1, 3, 5, 7]);
 }
