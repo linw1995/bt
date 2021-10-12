@@ -61,12 +61,7 @@ where
                     return;
                 }
 
-                let cur = &mut self.arena[cur_id];
-
-                #[cfg(debug_assertions)]
-                println!("cur={:?} vals_len={:?}", cur, cur.vals.len());
-
-                cur.vals.insert(val_idx, val);
+                self.arena[cur_id].vals.insert(val_idx, val);
 
                 loop {
                     let cur = &self.arena[cur_id];
@@ -77,6 +72,7 @@ where
                     if cur.vals.len() < self.m as usize {
                         return;
                     } else {
+                        // alloc or reuse a parent node
                         let parent_id = match cur.parent {
                             None => {
                                 let parent_id = self.alloc_node();
@@ -88,57 +84,62 @@ where
                             Some(parent_id) => parent_id,
                         };
 
-                        let (parent_val, right_vals, right_children) = {
-                            let left = &mut self.arena[cur_id];
-                            let left_vals = &mut left.vals;
-                            let left_children = &mut left.children;
+                        let (parent_val, right_vals, right_children) =
+                            self.split_node(cur_id, parent_id);
 
-                            let vals = &mut left_vals.split_off(self.m / 2);
-                            let right_vals = vals.split_off(1);
-                            let parent_val = vals[0];
-
-                            left.parent = Some(parent_id);
-                            left.vals = left_vals.to_vec();
-
-                            let mut right_children = vec![];
-                            if !left_children.is_empty() {
-                                right_children = left_children.split_off(self.m / 2 + 1);
-                                left.children = left_children.to_vec();
-                            }
-
-                            (parent_val, right_vals, right_children)
+                        // alloc a right node
+                        let right_id = {
+                            let right_id = self.alloc_node();
+                            let right = &mut self.arena[right_id];
+                            right.parent = Some(parent_id);
+                            right.vals.extend(right_vals);
+                            right.children.extend(right_children);
+                            right_id
                         };
 
-                        let right_id = self.alloc_node();
-                        let right = &mut self.arena[right_id];
-                        right.parent = Some(parent_id);
-                        right.vals.extend(right_vals);
-                        right.children.extend(right_children);
-
-                        let parent = &mut self.arena[parent_id];
-                        let mut insert_idx = parent.vals.len();
-                        for (idx, val) in parent.vals.iter().enumerate() {
-                            if &parent_val < val {
-                                insert_idx = idx;
-                                break;
+                        // find where to insert the new right node in the parent as one of the children
+                        {
+                            let parent = &mut self.arena[parent_id];
+                            let mut insert_idx = parent.vals.len();
+                            for (idx, val) in parent.vals.iter().enumerate() {
+                                if &parent_val < val {
+                                    insert_idx = idx;
+                                    break;
+                                }
                             }
+
+                            #[cfg(debug_assertions)]
+                            println!("insert_idx={:?} parent={:?}", insert_idx, parent);
+
+                            parent.vals.insert(insert_idx, parent_val);
+                            parent.children.insert(insert_idx + 1, right_id);
                         }
 
-                        #[cfg(debug_assertions)]
-                        println!("insert_idx={:?} parent={:?}", insert_idx, parent);
-
-                        parent.vals.insert(insert_idx, parent_val);
-                        parent.children.insert(insert_idx + 1, right_id);
-
-                        if parent.vals.len() < self.m - 1 {
-                            return;
-                        } else {
-                            cur_id = parent_id;
-                        }
+                        // Maybe the parent node needs to be rebalanced.
+                        cur_id = parent_id;
                     }
                 }
             }
         }
+    }
+
+    fn split_node(&mut self, cur_id: usize, parent_id: usize) -> (T, Vec<T>, Vec<usize>) {
+        let left = &mut self.arena[cur_id];
+        let left_vals = &mut left.vals;
+        let left_children = &mut left.children;
+
+        let vals = &mut left_vals.split_off(self.m / 2);
+        let right_vals = vals.split_off(1);
+        let parent_val = vals[0];
+
+        left.parent = Some(parent_id);
+
+        let mut right_children = vec![];
+        if !left_children.is_empty() {
+            right_children = left_children.split_off(self.m / 2 + 1);
+        }
+
+        (parent_val, right_vals, right_children)
     }
 
     fn search(&self, val: T) -> Option<(usize, usize, bool)> {
