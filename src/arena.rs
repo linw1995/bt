@@ -77,15 +77,31 @@ where
                             None => {
                                 let parent_id = self.alloc_node();
                                 self.root_id = parent_id;
-                                let parent = &mut self.arena[parent_id];
-                                parent.children.push(cur_id);
+                                self.arena[parent_id].children.push(cur_id);
                                 parent_id
                             }
                             Some(parent_id) => parent_id,
                         };
 
-                        let (parent_val, right_vals, right_children) =
-                            self.split_node(cur_id, parent_id);
+                        // split node
+                        let (separator_val, right_vals, right_children) = {
+                            let left = &mut self.arena[cur_id];
+                            left.parent = Some(parent_id);
+
+                            let lchildren = &mut left.children;
+                            let rchildren = if !lchildren.is_empty() {
+                                lchildren.split_off(self.m / 2 + 1)
+                            } else {
+                                vec![]
+                            };
+
+                            let vals = &mut left.vals.split_off(self.m / 2);
+                            (
+                                vals[0],           // separator value
+                                vals.split_off(1), // right values
+                                rchildren,         // right children
+                            )
+                        };
 
                         // alloc a right node
                         let right_id = {
@@ -102,7 +118,7 @@ where
                             let parent = &mut self.arena[parent_id];
                             let mut insert_idx = parent.vals.len();
                             for (idx, val) in parent.vals.iter().enumerate() {
-                                if &parent_val < val {
+                                if &separator_val < val {
                                     insert_idx = idx;
                                     break;
                                 }
@@ -111,7 +127,7 @@ where
                             #[cfg(debug_assertions)]
                             println!("insert_idx={:?} parent={:?}", insert_idx, parent);
 
-                            parent.vals.insert(insert_idx, parent_val);
+                            parent.vals.insert(insert_idx, separator_val);
                             parent.children.insert(insert_idx + 1, right_id);
                         }
 
@@ -121,25 +137,6 @@ where
                 }
             }
         }
-    }
-
-    fn split_node(&mut self, cur_id: usize, parent_id: usize) -> (T, Vec<T>, Vec<usize>) {
-        let left = &mut self.arena[cur_id];
-        let left_vals = &mut left.vals;
-        let left_children = &mut left.children;
-
-        let vals = &mut left_vals.split_off(self.m / 2);
-        let right_vals = vals.split_off(1);
-        let parent_val = vals[0];
-
-        left.parent = Some(parent_id);
-
-        let mut right_children = vec![];
-        if !left_children.is_empty() {
-            right_children = left_children.split_off(self.m / 2 + 1);
-        }
-
-        (parent_val, right_vals, right_children)
     }
 
     fn search(&self, val: T) -> Option<(usize, usize, bool)> {
