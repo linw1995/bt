@@ -143,7 +143,7 @@ where
                 }
                 insert_idx = idx;
                 if val == left {
-                    // the val is found in current node vals
+                    // the value is found in the current node values
                     return Some((cur.idx, insert_idx, true));
                 }
                 break;
