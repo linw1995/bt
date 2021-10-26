@@ -127,29 +127,34 @@ where
         }
     }
 
+    /// locate the (node_id, value_idx) for inserting the value.
     fn search(&self, val: T) -> Option<(usize, usize, bool)> {
         if self.arena.is_empty() {
             return None;
         }
         let mut cur = &self.arena[self.root_id];
         loop {
+            debug!(cur);
+            // find the insert index of value in the current node values
             let mut insert_idx = cur.vals.len();
-            let mut found = false;
-            for (idx, &begin) in cur.vals.iter().enumerate() {
-                if val > begin {
+            for (idx, &left) in cur.vals.iter().enumerate() {
+                if left < val {
                     continue;
                 }
                 insert_idx = idx;
-                if val == begin {
-                    found = true
+                if val == left {
+                    // the val is found in current node vals
+                    return Some((cur.idx, insert_idx, true));
                 }
                 break;
             }
+
+            // try to find a space for inserting the value from the left sub-tree
             if cur.children.len() > insert_idx {
                 cur = &self.arena[cur.children[insert_idx]];
                 continue;
             }
-            return Some((cur.idx, insert_idx, found));
+            return Some((cur.idx, insert_idx, false));
         }
     }
 
