@@ -183,7 +183,7 @@ where
         path
     }
 
-    pub fn traversal_bfs_groupby_level(&self) -> Vec<Vec<T>> {
+    pub fn format_debug(&self) -> String {
         use std::collections::VecDeque;
         let mut q = VecDeque::with_capacity(self.arena.len());
         let mut cur = &self.arena[self.root_id];
@@ -194,9 +194,7 @@ where
             if depth >= path.len() {
                 path.push(Vec::new());
             }
-            for &val in cur.vals.iter() {
-                path[depth].push(val);
-            }
+            path[depth].push(&cur.vals);
             for &child_id in cur.children.iter() {
                 q.push_back((child_id, depth + 1));
             }
@@ -208,7 +206,16 @@ where
                 None => break,
             }
         }
-        path
+        let mut rv = String::new();
+        for row in path.iter() {
+            for n in row.iter() {
+                rv.push_str(&format!("{:?} ", n));
+            }
+            rv.pop();
+            rv.push('\n');
+        }
+        rv.pop();
+        rv
     }
 }
 
@@ -313,9 +320,50 @@ fn traversal_bfs() {
     }
 
     assert_eq!(t.traversal_bfs(), vec![4, 2, 6, 1, 3, 5, 7]);
+}
+
+#[test]
+fn format_debug_1() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..8 {
+        t.insert(val);
+    }
 
     assert_eq!(
-        t.traversal_bfs_groupby_level(),
-        vec![vec![4], vec![2, 6], vec![1, 3, 5, 7]]
+        t.format_debug(),
+        "[4]
+[2] [6]
+[1] [3] [5] [7]"
+    );
+}
+
+#[test]
+fn format_debug_2() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..7 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 4]
+[1] [3] [5, 6]"
+    );
+}
+
+#[test]
+fn format_debug_3() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..6 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 4]
+[1] [3] [5]"
     );
 }
