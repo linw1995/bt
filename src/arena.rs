@@ -127,6 +127,88 @@ where
         }
     }
 
+    pub fn delete(&mut self, val: T) -> bool {
+        match self.search(val) {
+            None | Some((_, _, false)) => false,
+            Some((node_id, value_idx, true)) => {
+                {
+                    let node = &mut self.arena[node_id];
+                    node.vals.remove(value_idx);
+                }
+                if !self.arena[node_id].is_leaf() {
+                    let (from_id, from_value_idx) = match self.adjacent_children(node_id, value_idx)
+                    {
+                        (Some(&left_id), None) => {
+                            let (most_right_id, _) = self.most_right(left_id);
+                            (most_right_id, self.arena[most_right_id].vals.len() - 1)
+                        }
+                        (Some(&left_id), Some(&right_id)) => {
+                            let (most_right_id, most_right_depth) = self.most_right(left_id);
+                            let (most_left_id, most_left_depth) = self.most_left(right_id);
+                            if most_left_depth < most_right_depth {
+                                (most_right_id, self.arena[most_right_id].vals.len() - 1)
+                            } else {
+                                (most_left_id, 0)
+                            }
+                        }
+                        (None, Some(&right_id)) => {
+                            let (most_left_id, _) = self.most_left(right_id);
+                            (most_left_id, 0)
+                        }
+                        (None, None) => unreachable!(),
+                    };
+                    let new_separator_value = {
+                        let from_node = &mut self.arena[from_id];
+                        from_node.vals.remove(from_value_idx)
+                    };
+                    self.arena[node_id]
+                        .vals
+                        .insert(value_idx, new_separator_value);
+                }
+                // TODO: rebalancing
+                true
+            }
+        }
+    }
+
+    fn adjacent_children(
+        &self,
+        node_id: usize,
+        value_idx: usize,
+    ) -> (Option<&usize>, Option<&usize>) {
+        let cur = &self.arena[node_id];
+        if value_idx == 0 {
+            (None, cur.children.first())
+        } else if value_idx < cur.children.len() - 1 {
+            (
+                Some(&cur.children[value_idx - 1]),
+                Some(&cur.children[value_idx]),
+            )
+        } else {
+            unreachable!();
+        }
+    }
+
+    fn most_left(&self, node_id: usize) -> (usize, usize) {
+        let mut depth = 0;
+        let mut cur = &self.arena[node_id];
+        while let Some(&id) = cur.children.first() {
+            cur = &self.arena[id];
+            depth += 1;
+        }
+        (cur.idx, depth)
+    }
+
+    fn most_right(&self, node_id: usize) -> (usize, usize) {
+        let mut depth = 0;
+        let mut cur = &self.arena[node_id];
+        while let Some(&id) = cur.children.last() {
+            cur = &self.arena[id];
+            depth += 1;
+        }
+        (cur.idx, depth)
+    }
+
     /// locate the (node_id, value_idx) for inserting the value.
     fn search(&self, val: T) -> Option<(usize, usize, bool)> {
         if self.arena.is_empty() {
@@ -365,5 +447,41 @@ fn format_debug_3() {
         t.format_debug(),
         "[2, 4]
 [1] [3] [5]"
+    );
+}
+
+#[test]
+fn delete_notfound() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..4 {
+        t.insert(val);
+    }
+    assert_eq!(t.delete(4), false);
+}
+
+#[test]
+fn delete_1() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..5 {
+        t.insert(val);
+    }
+    for val in 6..8 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 4]
+[1] [3] [6, 7]"
+    );
+
+    t.delete(6);
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 4]
+[1] [3] [7]"
     );
 }
