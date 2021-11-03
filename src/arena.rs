@@ -254,18 +254,9 @@ where
     }
 
     fn merge_left(&mut self, node_id: usize) {
-        let parent_id = {
-            let node = &self.arena[node_id];
-            node.parent.unwrap()
-        };
         if let (Some(left_id), Some(node_child_idx), _) = self.sibling(node_id) {
-            debug!(node_id, parent_id, node_child_idx, left_id);
-            let value_idx = node_child_idx - 1;
-            let separator = self.arena[parent_id].vals.remove(value_idx);
-            self.arena[left_id].vals.push(separator);
-            let right_values = &mut self.arena[node_id].vals.split_off(0);
-            self.arena[left_id].vals.append(right_values);
-            self.arena[parent_id].children.remove(node_child_idx);
+            debug!(node_id, left_id, node_child_idx);
+            self.merge_sibling_nodes(left_id, node_child_idx - 1, node_id);
         } else {
             unreachable!()
         };
@@ -273,20 +264,26 @@ where
 
     fn merge_right(&mut self, node_id: usize) {
         if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
-            let parent_id = {
-                let right = &self.arena[right_id];
-                right.parent.unwrap()
-            };
-            debug!(node_id, parent_id, node_child_idx, right_id);
-            let value_idx = node_child_idx;
-            let separator = self.arena[parent_id].vals.remove(value_idx);
-            self.arena[node_id].vals.push(separator);
-            let right_values = &mut self.arena[right_id].vals.split_off(0);
-            self.arena[node_id].vals.append(right_values);
-            self.arena[parent_id].children.remove(node_child_idx + 1);
+            debug!(node_id, right_id, node_child_idx);
+            self.merge_sibling_nodes(node_id, node_child_idx, right_id);
         } else {
             unreachable!()
         };
+    }
+
+    fn merge_sibling_nodes(&mut self, node_id: usize, separator_idx: usize, right_id: usize) {
+        let parent_id = self.arena[node_id].parent.unwrap();
+        debug!(parent_id, node_id, separator_idx, right_id);
+
+        let parent = &mut self.arena[parent_id];
+        debug!(&parent);
+        let separator = parent.vals.remove(separator_idx);
+        self.arena[node_id].vals.push(separator);
+
+        let right_values = &mut self.arena[right_id].vals.split_off(0);
+        self.arena[node_id].vals.append(right_values);
+
+        self.arena[parent_id].children.remove(separator_idx + 1);
     }
 
     fn sibling(&self, node_id: usize) -> (Option<usize>, Option<usize>, Option<usize>) {
