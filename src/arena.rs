@@ -205,16 +205,29 @@ where
             (right_len, false)
         };
 
+        debug!(left_len, right_len, is_left_max);
+
         if max_len > (self.m - 1) / 2 {
             if is_left_max {
                 self.rotate_right(node_id);
             } else {
                 self.rotate_left(node_id);
             }
-        } else if is_left_max && right_len > 0 {
+        } else if right_len > 0 && left_len > 0 {
+            // Node merges a minor sibling node
+            if is_left_max {
+                self.merge_right(node_id);
+            } else {
+                self.merge_left(node_id);
+            }
+        } else if right_len > 0 {
+            // left_len == 0
             self.merge_right(node_id);
-        } else {
+        } else if left_len > 0 {
+            // right_len == 0
             self.merge_left(node_id);
+        } else {
+            unreachable!();
         }
     }
 
@@ -244,14 +257,23 @@ where
         debug!(node_id);
         todo!();
     }
-    fn merge_right(&mut self, node_id: usize) {
-        debug!(node_id);
-        todo!();
-    }
 
-    fn _merge_nodes(&mut self, node_id: usize, value_idx: usize) {
-        debug!(node_id, value_idx);
-        todo!();
+    fn merge_right(&mut self, node_id: usize) {
+        if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
+            let parent_id = {
+                let right = &self.arena[right_id];
+                right.parent.unwrap()
+            };
+            debug!(node_id, parent_id, node_child_idx, right_id);
+            let value_idx = node_child_idx;
+            let separator = self.arena[parent_id].vals.remove(value_idx);
+            self.arena[node_id].vals.push(separator);
+            let right_values = &mut self.arena[right_id].vals.split_off(0);
+            self.arena[node_id].vals.append(right_values);
+            self.arena[parent_id].children.remove(node_child_idx + 1);
+        } else {
+            unreachable!()
+        };
     }
 
     fn sibling(&self, node_id: usize) -> (Option<usize>, Option<usize>, Option<usize>) {
@@ -648,5 +670,31 @@ fn delete_3() {
         t.format_debug(),
         "[2, 6]
 [1] [4] [7]"
+    );
+}
+
+#[test]
+fn delete_4() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..5 {
+        t.insert(val);
+    }
+    for val in 6..8 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 4]
+[1] [3] [6, 7]"
+    );
+
+    t.delete(1);
+
+    assert_eq!(
+        t.format_debug(),
+        "[4]
+[2, 3] [6, 7]"
     );
 }
