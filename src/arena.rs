@@ -254,8 +254,21 @@ where
     }
 
     fn merge_left(&mut self, node_id: usize) {
-        debug!(node_id);
-        todo!();
+        let parent_id = {
+            let node = &self.arena[node_id];
+            node.parent.unwrap()
+        };
+        if let (Some(left_id), Some(node_child_idx), _) = self.sibling(node_id) {
+            debug!(node_id, parent_id, node_child_idx, left_id);
+            let value_idx = node_child_idx - 1;
+            let separator = self.arena[parent_id].vals.remove(value_idx);
+            self.arena[left_id].vals.push(separator);
+            let right_values = &mut self.arena[node_id].vals.split_off(0);
+            self.arena[left_id].vals.append(right_values);
+            self.arena[parent_id].children.remove(node_child_idx);
+        } else {
+            unreachable!()
+        };
     }
 
     fn merge_right(&mut self, node_id: usize) {
@@ -696,5 +709,29 @@ fn delete_4() {
         t.format_debug(),
         "[4]
 [2, 3] [6, 7]"
+    );
+}
+
+#[test]
+fn delete_5() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..5 {
+        t.insert(val);
+    }
+    t.insert(6);
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 4]
+[1] [3] [6]"
+    );
+
+    t.delete(3);
+
+    assert_eq!(
+        t.format_debug(),
+        "[4]
+[1, 2] [6]"
     );
 }
