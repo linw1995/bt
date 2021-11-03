@@ -131,42 +131,155 @@ where
         match self.search(val) {
             None | Some((_, _, false)) => false,
             Some((node_id, value_idx, true)) => {
-                {
-                    let node = &mut self.arena[node_id];
-                    node.vals.remove(value_idx);
-                }
-                if !self.arena[node_id].is_leaf() {
-                    let (from_id, from_value_idx) = match self.adjacent_children(node_id, value_idx)
-                    {
-                        (Some(&left_id), None) => {
-                            let (most_right_id, _) = self.most_right(left_id);
-                            (most_right_id, self.arena[most_right_id].vals.len() - 1)
-                        }
-                        (Some(&left_id), Some(&right_id)) => {
-                            let (most_right_id, most_right_depth) = self.most_right(left_id);
-                            let (most_left_id, most_left_depth) = self.most_left(right_id);
-                            if most_left_depth < most_right_depth {
-                                (most_right_id, self.arena[most_right_id].vals.len() - 1)
-                            } else {
-                                (most_left_id, 0)
-                            }
-                        }
-                        (None, Some(&right_id)) => {
-                            let (most_left_id, _) = self.most_left(right_id);
-                            (most_left_id, 0)
-                        }
-                        (None, None) => unreachable!(),
-                    };
-                    let new_separator_value = {
-                        let from_node = &mut self.arena[from_id];
-                        from_node.vals.remove(from_value_idx)
-                    };
-                    self.arena[node_id]
-                        .vals
-                        .insert(value_idx, new_separator_value);
-                }
-                // TODO: rebalancing
+                let node_id = self.delete_value(node_id, value_idx);
+                self.rebalance(node_id);
                 true
+            }
+        }
+    }
+
+    fn delete_value(&mut self, node_id: usize, value_idx: usize) -> usize {
+        {
+            let node = &mut self.arena[node_id];
+            node.vals.remove(value_idx);
+        }
+        let node = &self.arena[node_id];
+        if node.is_leaf() {
+            node_id
+        } else {
+            let (from_id, from_value_idx) = match self.adjacent_children(node_id, value_idx) {
+                (Some(&left_id), None) => {
+                    let (most_right_id, _) = self.most_right(left_id);
+                    (most_right_id, self.arena[most_right_id].vals.len() - 1)
+                }
+                (Some(&left_id), Some(&right_id)) => {
+                    let (most_right_id, most_right_depth) = self.most_right(left_id);
+                    let (most_left_id, most_left_depth) = self.most_left(right_id);
+                    if most_left_depth < most_right_depth {
+                        (most_right_id, self.arena[most_right_id].vals.len() - 1)
+                    } else {
+                        (most_left_id, 0)
+                    }
+                }
+                (None, Some(&right_id)) => {
+                    let (most_left_id, _) = self.most_left(right_id);
+                    (most_left_id, 0)
+                }
+                (None, None) => unreachable!(),
+            };
+
+            let new_separator_value = {
+                let from_node = &mut self.arena[from_id];
+                from_node.vals.remove(from_value_idx)
+            };
+
+            let node = &mut self.arena[node_id];
+            node.vals.insert(value_idx, new_separator_value);
+
+            from_id
+        }
+    }
+
+    fn rebalance(&mut self, node_id: usize) {
+        let node = &self.arena[node_id];
+        debug!(node);
+        if node.vals.len() >= (self.m - 1) / 2 {
+            return;
+        }
+        let (left, node_child_idx, right) = self.sibling(node_id);
+        debug!(left, node_child_idx, right);
+        let right_len = if let Some(id) = right {
+            self.arena[id].vals.len()
+        } else {
+            0
+        };
+        let left_len = if let Some(id) = left {
+            self.arena[id].vals.len()
+        } else {
+            0
+        };
+
+        let (max_len, is_left_max) = if left_len > right_len {
+            (left_len, true)
+        } else {
+            (right_len, false)
+        };
+
+        if max_len > (self.m - 1) / 2 {
+            if is_left_max {
+                self.rotate_right(node_id);
+            } else {
+                self.rotate_left(node_id);
+            }
+        } else if is_left_max && right_len > 0 {
+            self.merge_right(node_id);
+        } else {
+            self.merge_left(node_id);
+        }
+    }
+
+    fn rotate_left(&mut self, node_id: usize) {
+        if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
+            let parent_id = {
+                let right = &self.arena[right_id];
+                right.parent.unwrap()
+            };
+            debug!(node_id, parent_id, node_child_idx, right_id);
+            let value_idx = node_child_idx;
+            let separator = self.arena[parent_id].vals.remove(value_idx);
+            self.arena[node_id].vals.push(separator);
+            let new_separator = self.arena[right_id].vals.remove(0);
+            self.arena[parent_id].vals.insert(value_idx, new_separator)
+        } else {
+            unreachable!()
+        };
+    }
+
+    fn rotate_right(&mut self, node_id: usize) {
+        debug!(node_id);
+        todo!();
+    }
+
+    fn merge_left(&mut self, node_id: usize) {
+        debug!(node_id);
+        todo!();
+    }
+    fn merge_right(&mut self, node_id: usize) {
+        debug!(node_id);
+        todo!();
+    }
+
+    fn _merge_nodes(&mut self, node_id: usize, value_idx: usize) {
+        debug!(node_id, value_idx);
+        todo!();
+    }
+
+    fn sibling(&self, node_id: usize) -> (Option<usize>, Option<usize>, Option<usize>) {
+        let node = &self.arena[node_id];
+        match node.parent {
+            None => (None, None, None),
+            Some(parent_id) => {
+                let parent = &self.arena[parent_id];
+                let mut node_child_idx = parent.children.len();
+                for (idx, &child_id) in parent.children.iter().enumerate() {
+                    if child_id == node_id {
+                        node_child_idx = idx;
+                        break;
+                    }
+                }
+                (
+                    if node_child_idx == 0 {
+                        None
+                    } else {
+                        Some(parent.children[node_child_idx - 1])
+                    },
+                    Some(node_child_idx),
+                    if node_child_idx + 1 < parent.children.len() {
+                        Some(parent.children[node_child_idx + 1])
+                    } else {
+                        None
+                    },
+                )
             }
         }
     }
@@ -482,6 +595,32 @@ fn delete_1() {
     assert_eq!(
         t.format_debug(),
         "[2, 4]
+[1] [3] [7]"
+    );
+}
+
+#[test]
+fn delete_2() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..5 {
+        t.insert(val);
+    }
+    for val in 6..8 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 4]
+[1] [3] [6, 7]"
+    );
+
+    t.delete(4);
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 6]
 [1] [3] [7]"
     );
 }
