@@ -624,3 +624,29 @@ fn delete_2() {
 [1] [3] [7]"
     );
 }
+
+#[test]
+fn delete_3() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..5 {
+        t.insert(val);
+    }
+    for val in 6..8 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 4]
+[1] [3] [6, 7]"
+    );
+
+    t.delete(3);
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 6]
+[1] [4] [7]"
+    );
+}
