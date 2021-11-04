@@ -43,19 +43,20 @@ where
         idx
     }
 
-    pub fn insert(&mut self, val: T) {
-        match self.search(val) {
+    pub fn insert(&mut self, value: T) {
+        debug!(value);
+        match self.search(value) {
             None => {
                 let id = self.alloc_node();
                 let node = &mut self.arena[id];
-                node.vals.push(val);
+                node.vals.push(value);
             }
             Some((mut cur_id, val_idx, found)) => {
                 if found {
                     return;
                 }
 
-                self.arena[cur_id].vals.insert(val_idx, val);
+                self.arena[cur_id].vals.insert(val_idx, value);
 
                 loop {
                     let cur = &self.arena[cur_id];
@@ -86,6 +87,8 @@ where
                                 vec![]
                             };
 
+                            debug!(&left);
+
                             let vals = &mut left.vals.split_off(self.m / 2);
                             debug!(
                                 vals[0],           // separator value
@@ -97,11 +100,20 @@ where
                         // alloc a right node
                         let right_id = {
                             let right_id = self.alloc_node();
-                            let right = &mut self.arena[right_id];
-                            right.parent = Some(parent_id);
-                            right.vals.extend(right_vals);
-                            right.children.extend(right_children);
-                            debug!(right_id)
+                            {
+                                let right = &mut self.arena[right_id];
+                                right.parent = Some(parent_id);
+                                right.vals.extend(right_vals);
+                            }
+                            for &child_id in right_children.iter() {
+                                self.arena[child_id].parent = Some(right_id);
+                            }
+                            {
+                                let right = &mut self.arena[right_id];
+                                right.children.extend(right_children);
+                                debug!(right);
+                            }
+                            right_id
                         };
 
                         // find where to insert the new right node in the parent as one of the children
@@ -119,6 +131,10 @@ where
                             parent.children.insert(insert_idx + 1, right_id);
                         }
 
+                        debug!(
+                            &self.arena[cur_id],
+                            &self.arena[right_id], &self.arena[parent_id]
+                        );
                         // Maybe the parent node needs to be rebalanced.
                         cur_id = parent_id;
                     }
@@ -284,31 +300,48 @@ fn insert_4() {
     }
     assert_eq!(t.root_id, 1);
     let root = &t.arena[t.root_id];
+    assert_eq!(root.parent, None);
     assert_eq!(root.vals, vec![2]);
     assert_eq!(root.children, vec![0, 2]);
 
     t.insert(4);
     let right = &t.arena[2];
+    assert_eq!(right.parent, Some(1));
     assert_eq!(right.vals, vec![3, 4]);
 
     t.insert(5);
+    assert_eq!(t.root_id, 1);
     let root = &t.arena[t.root_id];
+    assert_eq!(root.parent, None);
     assert_eq!(root.vals, vec![2, 4]);
     let most_right = &t.arena[root.children[2]];
+    assert_eq!(most_right.parent, Some(t.root_id));
     assert_eq!(most_right.vals, vec![5]);
 
     t.insert(6);
+    assert_eq!(t.root_id, 1);
     let root = &t.arena[t.root_id];
     let most_right = &t.arena[root.children[2]];
+    assert_eq!(most_right.parent, Some(t.root_id));
     assert_eq!(most_right.vals, vec![5, 6]);
 
     t.insert(7);
+    assert_eq!(t.root_id, 5);
     let root = &t.arena[t.root_id];
     assert_eq!(root.vals, vec![4]);
     let left = &t.arena[root.children[0]];
+    assert_eq!(left.parent, Some(t.root_id));
     assert_eq!(left.vals, vec![2]);
     let right = &t.arena[root.children[1]];
+    assert_eq!(right.parent, Some(t.root_id));
     assert_eq!(right.vals, vec![6]);
+
+    let most_left = &t.arena[left.children[0]];
+    assert_eq!(most_left.parent, Some(left.idx));
+    assert_eq!(most_left.vals, vec![1]);
+    let most_right = &t.arena[right.children[1]];
+    assert_eq!(most_right.parent, Some(right.idx));
+    assert_eq!(most_right.vals, vec![7]);
 }
 
 #[test]
