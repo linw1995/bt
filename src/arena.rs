@@ -201,7 +201,7 @@ where
         loop {
             let node = &self.arena[cur_id];
             debug!(node);
-            if node.vals.len() >= (self.m - 1) / 2 {
+            if node.is_root() || node.vals.len() >= (self.m - 1) / 2 {
                 return;
             }
             let (left, node_child_idx, right) = self.sibling(cur_id);
@@ -252,6 +252,7 @@ where
             let parent_id = self.arena[cur_id].parent.unwrap();
             let parent = &self.arena[parent_id];
             if parent.is_root() && parent.vals.is_empty() {
+                self.arena[cur_id].parent = None;
                 self.root_id = cur_id;
                 return;
             }
@@ -822,6 +823,11 @@ fn delete_7() {
     );
 
     t.delete(2);
-
     assert_eq!(t.format_debug(), "[1, 3]");
+
+    t.delete(1);
+    assert_eq!(t.format_debug(), "[3]");
+
+    t.delete(3);
+    assert_eq!(t.format_debug(), "[]");
 }
