@@ -454,6 +454,9 @@ where
     }
 
     pub fn format_debug(&self) -> String {
+        if self.arena.is_empty() {
+            return String::from("[]");
+        }
         use std::collections::VecDeque;
         let mut q = VecDeque::with_capacity(self.arena.len());
         let mut cur = &self.arena[self.root_id];
@@ -653,6 +656,12 @@ fn format_debug_3() {
         "[2, 4]
 [1] [3] [5]"
     );
+}
+
+#[test]
+fn format_debug_4() {
+    let t = Tree::<usize>::default();
+    assert_eq!(t.format_debug(), "[]");
 }
 
 #[test]
