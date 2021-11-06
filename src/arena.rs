@@ -197,53 +197,65 @@ where
     }
 
     fn rebalance(&mut self, node_id: usize) {
-        let node = &self.arena[node_id];
-        debug!(node);
-        if node.vals.len() >= (self.m - 1) / 2 {
-            return;
-        }
-        let (left, node_child_idx, right) = self.sibling(node_id);
-        debug!(left, node_child_idx, right);
-        let right_len = if let Some(id) = right {
-            self.arena[id].vals.len()
-        } else {
-            0
-        };
-        let left_len = if let Some(id) = left {
-            self.arena[id].vals.len()
-        } else {
-            0
-        };
-
-        let (max_len, is_left_max) = if left_len > right_len {
-            (left_len, true)
-        } else {
-            (right_len, false)
-        };
-
-        debug!(left_len, right_len, is_left_max);
-
-        if max_len > (self.m - 1) / 2 {
-            if is_left_max {
-                self.rotate_right(node_id);
-            } else {
-                self.rotate_left(node_id);
+        let mut cur_id = node_id;
+        loop {
+            let node = &self.arena[cur_id];
+            debug!(node);
+            if node.vals.len() >= (self.m - 1) / 2 {
+                return;
             }
-        } else if right_len > 0 && left_len > 0 {
-            // Node merges a minor sibling node
-            if is_left_max {
-                self.merge_right(node_id);
+            let (left, node_child_idx, right) = self.sibling(cur_id);
+            debug!(left, node_child_idx, right);
+            let right_len = if let Some(id) = right {
+                self.arena[id].vals.len()
             } else {
-                self.merge_left(node_id);
+                0
+            };
+            let left_len = if let Some(id) = left {
+                self.arena[id].vals.len()
+            } else {
+                0
+            };
+
+            let (max_len, is_left_max) = if left_len > right_len {
+                (left_len, true)
+            } else {
+                (right_len, false)
+            };
+
+            debug!(left_len, right_len, is_left_max);
+
+            if max_len > (self.m - 1) / 2 {
+                if is_left_max {
+                    self.rotate_right(cur_id);
+                } else {
+                    self.rotate_left(cur_id);
+                }
+            } else if right_len > 0 && left_len > 0 {
+                // Node merges a minor sibling node
+                if is_left_max {
+                    self.merge_right(cur_id);
+                } else {
+                    self.merge_left(cur_id);
+                }
+            } else if right_len > 0 {
+                // left_len == 0
+                cur_id = self.merge_right(cur_id);
+            } else if left_len > 0 {
+                // right_len == 0
+                cur_id = self.merge_left(cur_id);
+            } else {
+                unreachable!();
             }
-        } else if right_len > 0 {
-            // left_len == 0
-            self.merge_right(node_id);
-        } else if left_len > 0 {
-            // right_len == 0
-            self.merge_left(node_id);
-        } else {
-            unreachable!();
+            debug!(self.format_debug());
+            debug!(&self.arena[cur_id]);
+            let parent_id = self.arena[cur_id].parent.unwrap();
+            let parent = &self.arena[parent_id];
+            if parent.is_root() && parent.vals.is_empty() {
+                self.root_id = cur_id;
+                return;
+            }
+            cur_id = parent_id;
         }
     }
 
@@ -269,22 +281,24 @@ where
         todo!();
     }
 
-    fn merge_left(&mut self, node_id: usize) {
+    fn merge_left(&mut self, node_id: usize) -> usize {
         if let (Some(left_id), Some(node_child_idx), _) = self.sibling(node_id) {
             debug!(node_id, left_id, node_child_idx);
             self.merge_sibling_nodes(left_id, node_child_idx - 1, node_id);
+            left_id
         } else {
             unreachable!()
-        };
+        }
     }
 
-    fn merge_right(&mut self, node_id: usize) {
+    fn merge_right(&mut self, node_id: usize) -> usize {
         if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
             debug!(node_id, right_id, node_child_idx);
             self.merge_sibling_nodes(node_id, node_child_idx, right_id);
+            node_id
         } else {
             unreachable!()
-        };
+        }
     }
 
     fn merge_sibling_nodes(&mut self, node_id: usize, separator_idx: usize, right_id: usize) {
@@ -298,6 +312,8 @@ where
 
         let right_values = &mut self.arena[right_id].vals.split_off(0);
         self.arena[node_id].vals.append(right_values);
+        let right_children = &mut self.arena[right_id].children.split_off(0);
+        self.arena[node_id].children.append(right_children);
 
         self.arena[parent_id].children.remove(separator_idx + 1);
     }
@@ -308,6 +324,7 @@ where
             None => (None, None, None),
             Some(parent_id) => {
                 let parent = &self.arena[parent_id];
+                debug!(node, parent);
                 let mut node_child_idx = parent.children.len();
                 for (idx, &child_id) in parent.children.iter().enumerate() {
                     if child_id == node_id {
@@ -763,5 +780,29 @@ fn delete_5() {
         t.format_debug(),
         "[4]
 [1, 2] [6]"
+    );
+}
+
+#[test]
+fn delete_6() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..8 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[4]
+[2] [6]
+[1] [3] [5] [7]"
+    );
+
+    t.delete(7);
+
+    assert_eq!(
+        t.format_debug(),
+        "[2, 4]
+[1] [3] [5, 6]"
     );
 }
