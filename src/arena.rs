@@ -165,6 +165,7 @@ where
         if node.is_leaf() {
             node_id
         } else {
+            // The internal node needs to find a value from children to fill the void.
             let (from_id, from_value_idx) = match self.adjacent_children(node_id, value_idx) {
                 (Some(&left_id), None) => {
                     let (most_right_id, _) = self.most_right(left_id);
@@ -173,7 +174,9 @@ where
                 (Some(&left_id), Some(&right_id)) => {
                     let (most_right_id, most_right_depth) = self.most_right(left_id);
                     let (most_left_id, most_left_depth) = self.most_left(right_id);
-                    if most_left_depth < most_right_depth {
+                    // Taking the value from the less depth node
+                    // can rebalance faster than taking the other way.
+                    if most_left_depth > most_right_depth {
                         (most_right_id, self.arena[most_right_id].vals.len() - 1)
                     } else {
                         (most_left_id, 0)
@@ -194,6 +197,7 @@ where
             let node = &mut self.arena[node_id];
             node.vals.insert(value_idx, new_separator_value);
 
+            // Return the leaf node for rebalancing later
             from_id
         }
     }
@@ -203,6 +207,7 @@ where
         loop {
             let node = &self.arena[cur_id];
             if node.is_root() || node.vals.len() >= (self.m - 1) / 2 {
+                // Check the node is deficient or not, except the root node.
                 return;
             }
             let (left, _, right) = self.sibling(cur_id);
