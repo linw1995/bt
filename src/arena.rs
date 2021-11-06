@@ -44,7 +44,6 @@ where
     }
 
     pub fn insert(&mut self, value: T) {
-        debug!(value);
         match self.search(value) {
             None => {
                 let id = self.alloc_node();
@@ -60,7 +59,6 @@ where
 
                 loop {
                     let cur = &self.arena[cur_id];
-                    debug!(&cur);
                     if cur.vals.len() < self.m as usize {
                         return;
                     } else {
@@ -87,8 +85,6 @@ where
                                 vec![]
                             };
 
-                            debug!(&left);
-
                             let vals = &mut left.vals.split_off(self.m / 2);
                             debug!(
                                 vals[0],           // separator value
@@ -111,7 +107,6 @@ where
                             {
                                 let right = &mut self.arena[right_id];
                                 right.children.extend(right_children);
-                                debug!(right);
                             }
                             right_id
                         };
@@ -126,15 +121,10 @@ where
                                     break;
                                 }
                             }
-                            debug!(&parent, insert_idx);
                             parent.vals.insert(insert_idx, separator_val);
                             parent.children.insert(insert_idx + 1, right_id);
                         }
 
-                        debug!(
-                            &self.arena[cur_id],
-                            &self.arena[right_id], &self.arena[parent_id]
-                        );
                         // Maybe the parent node needs to be rebalanced.
                         cur_id = parent_id;
                     }
@@ -200,12 +190,10 @@ where
         let mut cur_id = node_id;
         loop {
             let node = &self.arena[cur_id];
-            debug!(node);
             if node.is_root() || node.vals.len() >= (self.m - 1) / 2 {
                 return;
             }
-            let (left, node_child_idx, right) = self.sibling(cur_id);
-            debug!(left, node_child_idx, right);
+            let (left, _, right) = self.sibling(cur_id);
             let right_len = if let Some(id) = right {
                 self.arena[id].vals.len()
             } else {
@@ -222,8 +210,6 @@ where
             } else {
                 (right_len, false)
             };
-
-            debug!(left_len, right_len, is_left_max);
 
             if max_len > (self.m - 1) / 2 {
                 if is_left_max {
@@ -247,8 +233,6 @@ where
             } else {
                 unreachable!();
             }
-            debug!(self.format_debug());
-            debug!(&self.arena[cur_id]);
             let parent_id = self.arena[cur_id].parent.unwrap();
             let parent = &self.arena[parent_id];
             if parent.is_root() && parent.vals.is_empty() {
@@ -263,7 +247,6 @@ where
     fn rotate_left(&mut self, node_id: usize) {
         let parent_id = self.arena[node_id].parent.unwrap();
         if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
-            debug!(node_id, parent_id, node_child_idx, right_id);
             let value_idx = node_child_idx;
             let separator = self.arena[parent_id].vals.remove(value_idx);
             self.arena[node_id].vals.push(separator);
@@ -277,7 +260,6 @@ where
     fn rotate_right(&mut self, node_id: usize) {
         let parent_id = self.arena[node_id].parent.unwrap();
         if let (Some(left_id), Some(node_child_idx), _) = self.sibling(node_id) {
-            debug!(node_id, parent_id, left_id, node_child_idx);
             let value_idx = node_child_idx - 1;
             let separator = self.arena[parent_id].vals.remove(value_idx);
             self.arena[node_id].vals.push(separator);
@@ -293,7 +275,6 @@ where
 
     fn merge_left(&mut self, node_id: usize) -> usize {
         if let (Some(left_id), Some(node_child_idx), _) = self.sibling(node_id) {
-            debug!(node_id, left_id, node_child_idx);
             self.merge_sibling_nodes(left_id, node_child_idx - 1, node_id);
             left_id
         } else {
@@ -303,7 +284,6 @@ where
 
     fn merge_right(&mut self, node_id: usize) -> usize {
         if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
-            debug!(node_id, right_id, node_child_idx);
             self.merge_sibling_nodes(node_id, node_child_idx, right_id);
             node_id
         } else {
@@ -313,10 +293,8 @@ where
 
     fn merge_sibling_nodes(&mut self, node_id: usize, separator_idx: usize, right_id: usize) {
         let parent_id = self.arena[node_id].parent.unwrap();
-        debug!(parent_id, node_id, separator_idx, right_id);
 
         let parent = &mut self.arena[parent_id];
-        debug!(&parent);
         let separator = parent.vals.remove(separator_idx);
         self.arena[node_id].vals.push(separator);
 
@@ -334,7 +312,6 @@ where
             None => (None, None, None),
             Some(parent_id) => {
                 let parent = &self.arena[parent_id];
-                debug!(node, parent);
                 let mut node_child_idx = parent.children.len();
                 for (idx, &child_id) in parent.children.iter().enumerate() {
                     if child_id == node_id {
@@ -404,7 +381,6 @@ where
         }
         let mut cur = &self.arena[self.root_id];
         loop {
-            debug!(cur);
             // find the insert index of value in the current node values
             let mut insert_idx = cur.vals.len();
             for (idx, &left) in cur.vals.iter().enumerate() {
