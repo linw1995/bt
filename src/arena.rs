@@ -806,3 +806,22 @@ fn delete_6() {
 [1] [3] [5, 6]"
     );
 }
+
+#[test]
+fn delete_7() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in 1..4 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[2]
+[1] [3]"
+    );
+
+    t.delete(2);
+
+    assert_eq!(t.format_debug(), "[1, 3]");
+}
