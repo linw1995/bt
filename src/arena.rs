@@ -261,11 +261,8 @@ where
     }
 
     fn rotate_left(&mut self, node_id: usize) {
+        let parent_id = self.arena[node_id].parent.unwrap();
         if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
-            let parent_id = {
-                let right = &self.arena[right_id];
-                right.parent.unwrap()
-            };
             debug!(node_id, parent_id, node_child_idx, right_id);
             let value_idx = node_child_idx;
             let separator = self.arena[parent_id].vals.remove(value_idx);
@@ -278,8 +275,20 @@ where
     }
 
     fn rotate_right(&mut self, node_id: usize) {
-        debug!(node_id);
-        todo!();
+        let parent_id = self.arena[node_id].parent.unwrap();
+        if let (Some(left_id), Some(node_child_idx), _) = self.sibling(node_id) {
+            debug!(node_id, parent_id, left_id, node_child_idx);
+            let value_idx = node_child_idx - 1;
+            let separator = self.arena[parent_id].vals.remove(value_idx);
+            self.arena[node_id].vals.push(separator);
+            let new_separator = {
+                let left = &mut self.arena[left_id];
+                left.vals.remove(left.vals.len() - 1)
+            };
+            self.arena[parent_id].vals.insert(value_idx, new_separator)
+        } else {
+            unreachable!()
+        };
     }
 
     fn merge_left(&mut self, node_id: usize) -> usize {
@@ -830,4 +839,26 @@ fn delete_7() {
 
     t.delete(3);
     assert_eq!(t.format_debug(), "[]");
+}
+
+#[test]
+fn delete_8() {
+    let mut t = Tree::default();
+    t.m = 3;
+    for val in [4, 3, 2, 1] {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[3]
+[1, 2] [4]"
+    );
+    t.delete(4);
+
+    assert_eq!(
+        t.format_debug(),
+        "[2]
+[1] [3]"
+    );
 }
