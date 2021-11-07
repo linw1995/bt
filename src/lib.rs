@@ -23,7 +23,7 @@ macro_rules! debug {
 		$val
 	}};
 	($($val:expr),+ $(,)?) => {
-		($(debug!($val)),+,)
+		($($val),+,)
 	};
 }
 
