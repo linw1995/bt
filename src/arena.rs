@@ -268,7 +268,15 @@ where
             let separator = self.arena[parent_id].vals.remove(value_idx);
             self.arena[node_id].vals.push(separator);
             let new_separator = self.arena[right_id].vals.remove(0);
-            self.arena[parent_id].vals.insert(value_idx, new_separator)
+            self.arena[parent_id].vals.insert(value_idx, new_separator);
+
+            // rotate with children if exists.
+            let right = &mut self.arena[right_id];
+            if !right.children.is_empty() {
+                let child_id = right.children.remove(0);
+                self.arena[node_id].children.push(child_id);
+                self.arena[child_id].parent = Some(node_id);
+            }
         } else {
             unreachable!()
         };
@@ -284,7 +292,15 @@ where
                 let left = &mut self.arena[left_id];
                 left.vals.remove(left.vals.len() - 1)
             };
-            self.arena[parent_id].vals.insert(value_idx, new_separator)
+            self.arena[parent_id].vals.insert(value_idx, new_separator);
+
+            // rotate with children if exists.
+            let left = &mut self.arena[left_id];
+            if !left.children.is_empty() {
+                let child_id = left.children.remove(left.children.len() - 1);
+                self.arena[node_id].children.insert(0, child_id);
+                self.arena[child_id].parent = Some(node_id);
+            }
         } else {
             unreachable!()
         };
@@ -841,4 +857,66 @@ fn delete_8() {
         "[2]
 [1] [3]"
     );
+}
+
+#[test]
+fn delete_9_rotate_left() {
+    let mut t = Tree::new(3);
+    for val in 1..10 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[4]
+[2] [6, 8]
+[1] [3] [5] [7] [9]"
+    );
+
+    t.delete(2);
+
+    assert_eq!(
+        t.format_debug(),
+        "[6]
+[4] [8]
+[1, 3] [5] [7] [9]"
+    );
+
+    let root = &t.arena[t.root_id];
+    let node4 = &t.arena[*root.children.first().unwrap()];
+    assert_eq!(node4.children.len(), 2);
+    let node8 = &t.arena[*root.children.last().unwrap()];
+    assert_eq!(node8.children.len(), 2);
+}
+
+#[test]
+fn delete_10_rotate_right() {
+    let mut t = Tree::new(3);
+    let mut vals: Vec<usize> = (1..10).collect();
+    vals.reverse();
+    for val in vals {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[6]
+[2, 4] [8]
+[1] [3] [5] [7] [9]"
+    );
+
+    t.delete(8);
+
+    assert_eq!(
+        t.format_debug(),
+        "[4]
+[2] [6]
+[1] [3] [5] [7, 9]"
+    );
+
+    let root = &t.arena[t.root_id];
+    let node2 = &t.arena[*root.children.first().unwrap()];
+    assert_eq!(node2.children.len(), 2);
+    let node6 = &t.arena[*root.children.last().unwrap()];
+    assert_eq!(node6.children.len(), 2);
 }
