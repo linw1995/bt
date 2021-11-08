@@ -330,13 +330,16 @@ where
         let parent = &mut self.arena[parent_id];
         let separator = parent.vals.remove(separator_idx);
         self.arena[node_id].vals.push(separator);
+        self.arena[parent_id].children.remove(separator_idx + 1);
 
         let right_values = &mut self.arena[right_id].vals.split_off(0);
         self.arena[node_id].vals.append(right_values);
-        let right_children = &mut self.arena[right_id].children.split_off(0);
-        self.arena[node_id].children.append(right_children);
 
-        self.arena[parent_id].children.remove(separator_idx + 1);
+        let right_children = &mut self.arena[right_id].children.split_off(0);
+        for &child_id in right_children.iter() {
+            self.arena[child_id].parent = Some(node_id);
+        }
+        self.arena[node_id].children.append(right_children);
     }
 
     fn sibling(&self, node_id: usize) -> (Option<usize>, Option<usize>, Option<usize>) {
