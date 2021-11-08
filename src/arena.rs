@@ -920,3 +920,36 @@ fn delete_10_rotate_right() {
     let node6 = &t.arena[*root.children.last().unwrap()];
     assert_eq!(node6.children.len(), 2);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rand_vec(n: usize, seed: usize) -> Vec<usize> {
+        use rand::seq::SliceRandom;
+        use rand::SeedableRng;
+        use rand_pcg::Pcg64;
+
+        let mut rng = Pcg64::seed_from_u64(seed as u64);
+        let mut vec: Vec<_> = (0..n).collect();
+        vec.shuffle(&mut rng);
+        return vec;
+    }
+
+    #[test]
+    fn delete_11_delete_all() {
+        let vals = rand_vec(20, 2);
+
+        let mut t = Tree::new(3);
+        for val in vals {
+            t.insert(val);
+        }
+
+        let vals = rand_vec(20, 3);
+        for val in vals {
+            t.delete(val);
+        }
+
+        assert_eq!(t.format_debug(), "[]");
+    }
+}
