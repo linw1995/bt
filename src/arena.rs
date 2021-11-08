@@ -382,12 +382,14 @@ where
         value_idx: usize,
     ) -> (Option<&usize>, Option<&usize>) {
         let cur = &self.arena[node_id];
-        if value_idx == 0 {
-            (None, cur.children.first())
-        } else if value_idx < cur.children.len() - 1 {
+        if value_idx < cur.children.len() {
             (
-                Some(&cur.children[value_idx - 1]),
                 Some(&cur.children[value_idx]),
+                if value_idx < cur.children.len() - 1 {
+                    Some(&cur.children[value_idx + 1])
+                } else {
+                    None
+                },
             )
         } else {
             unreachable!();
