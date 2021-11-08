@@ -234,27 +234,31 @@ where
                 } else {
                     self.rotate_left(cur_id);
                 }
-            } else if right_len > 0 && left_len > 0 {
+                return;
+            }
+
+            let (merged_node_id, _deficient_node_id) = if right_len > 0 && left_len > 0 {
                 // Node merges a minor sibling node
                 if is_left_max {
-                    self.merge_right(cur_id);
+                    self.merge_right(cur_id)
                 } else {
-                    self.merge_left(cur_id);
+                    self.merge_left(cur_id)
                 }
             } else if right_len > 0 {
                 // left_len == 0
-                cur_id = self.merge_right(cur_id);
+                self.merge_right(cur_id)
             } else if left_len > 0 {
                 // right_len == 0
-                cur_id = self.merge_left(cur_id);
+                self.merge_left(cur_id)
             } else {
-                unreachable!();
-            }
+                unreachable!()
+            };
+
             let parent_id = self.arena[cur_id].parent.unwrap();
             let parent = &self.arena[parent_id];
-            if parent.is_root() && parent.vals.is_empty() {
-                self.arena[cur_id].parent = None;
-                self.root_id = cur_id;
+            if parent.vals.is_empty() && parent.is_root() {
+                self.arena[merged_node_id].parent = None;
+                self.root_id = merged_node_id;
                 return;
             }
             cur_id = parent_id;
@@ -306,19 +310,19 @@ where
         };
     }
 
-    fn merge_left(&mut self, node_id: usize) -> usize {
+    fn merge_left(&mut self, node_id: usize) -> (usize, usize) {
         if let (Some(left_id), Some(node_child_idx), _) = self.sibling(node_id) {
             self.merge_sibling_nodes(left_id, node_child_idx - 1, node_id);
-            left_id
+            (left_id, node_id)
         } else {
             unreachable!()
         }
     }
 
-    fn merge_right(&mut self, node_id: usize) -> usize {
+    fn merge_right(&mut self, node_id: usize) -> (usize, usize) {
         if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
             self.merge_sibling_nodes(node_id, node_child_idx, right_id);
-            node_id
+            (node_id, right_id)
         } else {
             unreachable!()
         }
