@@ -210,7 +210,7 @@ where
                 // Check the node is deficient or not, except the root node.
                 return;
             }
-            let (left, _, right) = self.sibling(cur_id);
+            let (left, _cur_idx, right) = self.sibling(cur_id);
             let right_len = if let Some(id) = right {
                 self.arena[id].vals.len()
             } else {
@@ -267,8 +267,8 @@ where
 
     fn rotate_left(&mut self, node_id: usize) {
         let parent_id = self.arena[node_id].parent.unwrap();
-        if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
-            let value_idx = node_child_idx;
+        if let (_, Some(node_idx), Some(right_id)) = self.sibling(node_id) {
+            let value_idx = node_idx;
             let separator = self.arena[parent_id].vals.remove(value_idx);
             self.arena[node_id].vals.push(separator);
             let new_separator = self.arena[right_id].vals.remove(0);
@@ -288,8 +288,8 @@ where
 
     fn rotate_right(&mut self, node_id: usize) {
         let parent_id = self.arena[node_id].parent.unwrap();
-        if let (Some(left_id), Some(node_child_idx), _) = self.sibling(node_id) {
-            let value_idx = node_child_idx - 1;
+        if let (Some(left_id), Some(node_idx), _) = self.sibling(node_id) {
+            let value_idx = node_idx - 1;
             let separator = self.arena[parent_id].vals.remove(value_idx);
             self.arena[node_id].vals.push(separator);
             let new_separator = {
@@ -311,8 +311,8 @@ where
     }
 
     fn merge_left(&mut self, node_id: usize) -> (usize, usize) {
-        if let (Some(left_id), Some(node_child_idx), _) = self.sibling(node_id) {
-            self.merge_sibling_nodes(left_id, node_child_idx - 1, node_id);
+        if let (Some(left_id), Some(node_idx), _) = self.sibling(node_id) {
+            self.merge_sibling_nodes(left_id, node_idx - 1, node_id);
             (left_id, node_id)
         } else {
             unreachable!()
@@ -320,8 +320,8 @@ where
     }
 
     fn merge_right(&mut self, node_id: usize) -> (usize, usize) {
-        if let (_, Some(node_child_idx), Some(right_id)) = self.sibling(node_id) {
-            self.merge_sibling_nodes(node_id, node_child_idx, right_id);
+        if let (_, Some(node_idx), Some(right_id)) = self.sibling(node_id) {
+            self.merge_sibling_nodes(node_id, node_idx, right_id);
             (node_id, right_id)
         } else {
             unreachable!()
@@ -961,4 +961,41 @@ mod tests {
 
         assert_eq!(t.format_debug(), "[]");
     }
+}
+
+#[test]
+fn sibling() {
+    let mut t = Tree::new(3);
+    for val in 1..8 {
+        t.insert(val);
+    }
+
+    assert_eq!(
+        t.format_debug(),
+        "[4]
+[2] [6]
+[1] [3] [5] [7]"
+    );
+
+    let root = &t.arena[t.root_id];
+    let left_id = root.children.first().unwrap();
+    let right_id = root.children.last().unwrap();
+    let (left_left_id, left_idx, right_left_id) = t.sibling(*left_id);
+    assert_eq!(left_left_id, None);
+    assert_eq!(left_idx, Some(0));
+    assert_eq!(right_left_id, Some(*right_id));
+
+    let (left_right_id, right_idx, right_right_id) = t.sibling(*right_id);
+    assert_eq!(left_right_id, Some(*left_id));
+    assert_eq!(right_idx, Some(1));
+    assert_eq!(right_right_id, None);
+
+    let (node_id, value_idx, found) = t.search(3);
+    assert_eq!(found, true);
+    assert_eq!(value_idx, 0);
+    let (left_node_id, node_idx, right_node_id) = t.sibling(node_id);
+    assert_ne!(left_node_id, None);
+    assert_eq!(t.arena[left_node_id.unwrap()].vals, vec![1]);
+    assert_eq!(node_idx, Some(1));
+    assert_eq!(right_node_id, None);
 }
