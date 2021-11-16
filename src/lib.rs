@@ -1,3 +1,7 @@
+#![allow(incomplete_features)]
+#![feature(const_default_impls)]
+#![feature(generic_const_exprs)]
+
 #[cfg(debug_assertions)]
 #[macro_use]
 extern crate std;

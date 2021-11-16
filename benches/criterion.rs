@@ -8,7 +8,7 @@ use bt::arena::Tree;
 
 #[inline]
 fn insert(values: &Vec<usize>) {
-    let mut t = Tree::new(3);
+    let mut t = Tree::<_, 3>::default();
     for &v in values {
         t.insert(v);
     }
@@ -16,7 +16,7 @@ fn insert(values: &Vec<usize>) {
 
 #[inline]
 fn insert_delete(values: &Vec<usize>, delete_values: &Vec<usize>) {
-    let mut t = Tree::new(3);
+    let mut t = Tree::<_, 3>::default();
     for &v in values {
         t.insert(v);
     }
