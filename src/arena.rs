@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fmt::Debug;
 
 extern crate arrayvec;
@@ -6,17 +7,17 @@ use arrayvec::ArrayVec;
 #[derive(Debug)]
 pub struct Node<T, const M: usize>
 where
-    [(); M + 1]: Sized,
+    [(); M - 1]: Sized,
 {
     idx: usize,
     parent: Option<usize>,
-    values: ArrayVec<T, M>,
-    children: ArrayVec<usize, { M + 1 }>,
+    values: ArrayVec<T, { M - 1 }>,
+    children: ArrayVec<usize, M>,
 }
 
 impl<T, const M: usize> Default for Node<T, M>
 where
-    [(); M + 1]: Sized,
+    [(); M - 1]: Sized,
 {
     fn default() -> Self {
         Node {
@@ -30,7 +31,7 @@ where
 
 impl<T, const M: usize> Node<T, M>
 where
-    [(); M + 1]: Sized,
+    [(); M - 1]: Sized,
 {
     pub fn is_root(&self) -> bool {
         self.parent.is_none()
@@ -44,7 +45,7 @@ where
 #[derive(Debug)]
 pub struct Tree<T, const M: usize>
 where
-    [(); M + 1]: Sized,
+    [(); M - 1]: Sized,
 {
     arena: Vec<Node<T, M>>,
     root_id: usize,
@@ -53,15 +54,20 @@ where
 impl<T, const M: usize> Default for Tree<T, M>
 where
     T: Ord + Copy + Default + Debug,
-    [(); M + 1]: Sized,
-    [(); M / 2 + 1]: Sized,
+    [(); M - 1]: Sized,
 {
     fn default() -> Self {
         let mut t = Tree::<T, M> {
             root_id: 0,
-            arena: vec![],
+            arena: Vec::new(),
         };
-        t.root_id = t.alloc_node();
+        let root_id = t.arena.len();
+        let root = Node::<T, M> {
+            idx: root_id,
+            ..Default::default()
+        };
+        t.arena.push(root);
+        t.root_id = root_id;
         t
     }
 }
@@ -69,115 +75,209 @@ where
 impl<T, const M: usize> Tree<T, M>
 where
     T: Ord + Copy + Default + Debug,
-    [(); M + 1]: Sized,
-    [(); M / 2 + 1]: Sized,
+    [(); M - 1]: Sized,
 {
-    fn alloc_node(&mut self) -> usize {
-        let idx = self.arena.len();
-        let node = Node::<T, M> {
-            idx,
-            ..Default::default()
+    fn insert_into(&mut self, cur_id: usize, value: T) -> Option<(T, usize)> {
+        let cur = &self.arena[cur_id];
+        let insert_idx = {
+            let mut low = 0;
+            let mut high = cur.values.len();
+            let mut median = ((high - low) / 2) + low;
+            while low < high {
+                match value.cmp(&cur.values[median]) {
+                    Ordering::Less => high = median,
+                    Ordering::Equal => return None,
+                    Ordering::Greater => low = median + 1,
+                };
+                median = ((high - low) / 2) + low;
+            }
+            median
         };
-        self.arena.push(node);
-        idx
+        debug!(&cur, value, insert_idx);
+
+        let (value, value_right_child_id) = if cur.is_leaf() {
+            (value, None)
+        } else {
+            let child_id = self.arena[cur_id].children[insert_idx];
+            if let Some((median, median_right_child_id)) = self.insert_into(child_id, value) {
+                (median, Some(median_right_child_id))
+            } else {
+                return None;
+            }
+        };
+
+        #[cfg(debug_assertions)]
+        if let Some(child_id) = value_right_child_id {
+            debug!(value, &self.arena[child_id], &self.arena[cur_id]);
+
+            assert_eq!(
+                self.arena[cur_id].values.len() + 1,
+                self.arena[cur_id].children.len()
+            );
+
+            if !self.arena[child_id].is_leaf() {
+                assert_eq!(
+                    self.arena[child_id].values.len() + 1,
+                    self.arena[child_id].children.len()
+                );
+            }
+        }
+
+        let cur = &self.arena[cur_id];
+        if !cur.values.is_full() {
+            let cur = &mut self.arena[cur_id];
+            cur.values.insert(insert_idx, value);
+            if let Some(child_id) = value_right_child_id {
+                cur.children.insert(insert_idx + 1, child_id);
+                self.arena[child_id].parent = Some(cur_id);
+            }
+            None
+        } else {
+            // need to separate node
+            let (right, median) = {
+                let right_id = self.arena.len();
+                let mut right = Node::<T, M> {
+                    idx: right_id,
+                    ..Default::default()
+                };
+                let cur = &mut self.arena[cur_id];
+                match insert_idx.cmp(&(M / 2)) {
+                    Ordering::Greater => {
+                        // values: | left | median | right |
+
+                        // left: 0..M / 2
+                        // M / 2
+                        // median: M / 2
+                        // right: M / 2 + 1..M - 1
+
+                        // right: | part one | value | part two |
+                        // part one: M / 2 + 1..insert_idx
+                        // value
+                        // part two: insert_idx..M - 1
+                        // M / 2 - 1
+                        {
+                            let drain = &mut cur.values.drain(M / 2 + 1..);
+                            right.values.extend(drain.take(insert_idx - M / 2 - 1));
+                            right.values.push(value);
+                            right.values.extend(drain);
+                        };
+                        // children: | left | right |
+                        // left: 0..M / 2 + 1
+                        // M / 2 + 1
+                        // right: M / 2 + 1..
+                        // M / 2
+
+                        if let Some(child_id) = value_right_child_id {
+                            {
+                                let drain = &mut cur.children.drain(M / 2 + 1..);
+                                right.children.extend(drain.take(insert_idx - M / 2));
+                                right.children.push(child_id);
+                                right.children.extend(drain);
+                            }
+                            for &child_id in &right.children {
+                                self.arena[child_id].parent = Some(right_id);
+                            }
+                        }
+
+                        (right, self.arena[cur_id].values.remove(M / 2))
+                    }
+                    Ordering::Less => {
+                        // values: | left | median | right |
+
+                        // left: | part one | value | part two |
+                        // part one: 0..insert_idx
+                        // value
+                        // part two: insert_idx..M / 2 - 1
+                        // M / 2
+
+                        // median: M / 2 - 1
+                        // right: M / 2..
+                        // M / 2 - 1
+
+                        right.values.extend(cur.values.drain(M / 2..));
+                        let median = cur.values.remove(M / 2 - 1);
+                        cur.values.insert(insert_idx, value);
+
+                        // children: | left | right |
+
+                        // left: | part one | child_id | part two |
+                        // part one: 0..insert_idx + 1
+                        // child_id: insert_idx + 1
+                        // part two: insert_idx + 1..M / 2
+                        // M / 2 + 1
+
+                        // right: M / 2 ..
+                        // M / 2
+
+                        if let Some(child_id) = value_right_child_id {
+                            right.children.extend(cur.children.drain(M / 2..));
+                            for &child_id in &right.children {
+                                self.arena[child_id].parent = Some(right_id);
+                            }
+
+                            let cur = &mut self.arena[cur_id];
+                            cur.children.insert(insert_idx + 1, child_id);
+                            self.arena[child_id].parent = Some(cur_id);
+                        }
+
+                        (right, median)
+                    }
+                    Ordering::Equal => {
+                        // values: | left | median | right |
+                        // left: 0..M / 2
+                        // M / 2
+                        // median: value
+                        // right: M / 2..M - 1
+                        // M / 2 - 1
+
+                        right.values.extend(cur.values.drain(M / 2..));
+
+                        // children: | left | right |
+
+                        // left: 0..M / 2
+                        // child_id
+                        // M / 2 + 1
+
+                        // right: M / 2..
+                        // M / 2
+
+                        if let Some(child_id) = value_right_child_id {
+                            right.children.push(child_id);
+                            right.children.extend(cur.children.drain(M / 2 + 1..));
+                            for &child_id in &right.children {
+                                self.arena[child_id].parent = Some(right_id);
+                            }
+                        }
+
+                        (right, value)
+                    }
+                }
+            };
+            assert_eq!(right.idx, self.arena.len());
+            self.arena.push(right);
+            Some((median, self.arena.len() - 1))
+        }
     }
 
     pub fn insert(&mut self, value: T) {
-        match self.search(value) {
-            (_, _, true) => {}
-            (mut cur_id, val_idx, false) => {
-                let cur = &mut self.arena[cur_id];
-                cur.values.insert(val_idx, value);
+        debug!(value);
+        if let Some((median, right_id)) = self.insert_into(self.root_id, value) {
+            debug!(median, &self.arena[right_id], &self.arena[self.root_id]);
+            let root_id = self.arena.len();
+            let mut root = Node::<T, M> {
+                idx: root_id,
+                ..Default::default()
+            };
+            root.values.push(median);
+            root.children.push(self.root_id);
+            root.children.push(right_id);
 
-                // rebalance tree
-                loop {
-                    let cur = &self.arena[cur_id];
-                    if cur.values.len() < M {
-                        return;
-                    } else {
-                        // alloc or get a parent node
-                        let parent_id = match cur.parent {
-                            None => {
-                                // The current node is the root node of the tree.
-                                // Splitting it needs to create a new root node.
-                                self.root_id = self.alloc_node();
+            self.arena[self.root_id].parent = Some(root_id);
+            self.arena[right_id].parent = Some(root_id);
 
-                                let old_root = &mut self.arena[cur_id];
-                                old_root.parent = Some(self.root_id);
-
-                                let parent = &mut self.arena[self.root_id];
-                                parent.children.push(cur_id);
-
-                                self.root_id
-                            }
-                            Some(parent_id) => parent_id,
-                        };
-
-                        // split current node as left and right
-                        let left_id = cur_id;
-                        let (separator_val, right_vals, right_children) = {
-                            let left = &mut self.arena[left_id];
-                            // split the values of the left node
-                            let separator_value = left.values.remove(M / 2);
-                            let right_values: ArrayVec<T, { M / 2 }> =
-                                left.values.drain(M / 2..).collect();
-
-                            // split the children of the left node
-                            let left_children = &mut left.children;
-                            let right_children: ArrayVec<usize, { M / 2 + 1 }> =
-                                if !left_children.is_empty() {
-                                    // the size of an internal node children is always larger than self.m / 2 + 1
-                                    left_children.drain(M / 2 + 1..).collect()
-                                } else {
-                                    ArrayVec::new()
-                                };
-                            // or it is just a leaf node with no child
-                            debug!(
-                                separator_value, // separator value
-                                right_values,    // right values
-                                right_children,  // right children
-                            )
-                        };
-
-                        // alloc a right node
-                        let right_id = {
-                            let right_id = self.alloc_node();
-                            {
-                                let right = &mut self.arena[right_id];
-                                right.parent = Some(parent_id);
-                                right.values.extend(right_vals);
-                            }
-                            // update the parent of children as the right node
-                            for &child_id in right_children.iter() {
-                                self.arena[child_id].parent = Some(right_id);
-                            }
-                            {
-                                let right = &mut self.arena[right_id];
-                                right.children.extend(right_children);
-                            }
-                            right_id
-                        };
-
-                        // find where to insert the new right node in the parent as one of the children
-                        {
-                            let parent = &mut self.arena[parent_id];
-                            let mut insert_idx = parent.values.len();
-                            for (idx, val) in parent.values.iter().enumerate() {
-                                if &separator_val < val {
-                                    insert_idx = idx;
-                                    break;
-                                }
-                            }
-                            parent.values.insert(insert_idx, separator_val);
-                            parent.children.insert(insert_idx + 1, right_id);
-                        }
-
-                        // Maybe the parent node needs to be rebalanced.
-                        cur_id = parent_id;
-                    }
-                }
-            }
-        }
+            self.arena.push(root);
+            self.root_id = root_id;
+        };
     }
 
     pub fn delete(&mut self, val: T) -> bool {
@@ -456,26 +556,28 @@ where
         (cur.idx, depth)
     }
 
-    /// locate the (node_id, value_idx) for inserting the value.
+    /// locate the (parent_value_idx, node_id, value_idx) for inserting the value.
     fn search(&self, val: T) -> (usize, usize, bool) {
         let mut cur = &self.arena[self.root_id];
         loop {
             // find the insert index of value in the current node values
-            let mut insert_idx = cur.values.len();
-            for (idx, &left) in cur.values.iter().enumerate() {
-                if left < val {
-                    continue;
+            let insert_idx = {
+                let mut low = 0;
+                let mut high = cur.values.len();
+                let mut median = ((high - low) / 2) + low;
+                while low < high {
+                    match val.cmp(&cur.values[median]) {
+                        Ordering::Less => high = median,
+                        Ordering::Equal => return (cur.idx, median, true),
+                        Ordering::Greater => low = median + 1,
+                    };
+                    median = ((high - low) / 2) + low;
                 }
-                insert_idx = idx;
-                if val == left {
-                    // the value is found in the current node values
-                    return (cur.idx, insert_idx, true);
-                }
-                break;
-            }
+                median
+            };
 
             // try to find a space for inserting the value from the left sub-tree
-            if cur.children.len() > insert_idx {
+            if !cur.is_leaf() {
                 cur = &self.arena[cur.children[insert_idx]];
                 continue;
             }
@@ -522,7 +624,7 @@ where
             if depth >= path.len() {
                 path.push(Vec::new());
             }
-            path[depth].push(&cur.values);
+            path[depth].push((cur.idx, &cur.values));
             for &child_id in cur.children.iter() {
                 q.push_back((child_id, depth + 1));
             }
@@ -536,8 +638,8 @@ where
         }
         let mut rv = String::new();
         for row in path.iter() {
-            for n in row.iter() {
-                rv.push_str(&format!("{:?} ", n));
+            for (idx, n) in row.iter() {
+                rv.push_str(&format!("#{:?}{:?} ", idx, n));
             }
             rv.pop();
             rv.push('\n');
@@ -588,14 +690,18 @@ fn insert_2() {
 fn insert_3() {
     let mut t = Tree::<_, 3>::default();
     t.insert(9);
+    debug!(t.format_debug());
     t.insert(10);
+    debug!(t.format_debug());
     t.insert(0);
+    debug!(t.format_debug());
     assert_eq!(t.arena.len(), 3);
     let root = &t.arena[t.root_id];
+    debug!(t.format_debug());
     assert_eq!(root.values.as_slice(), vec![9]);
-    assert_eq!(root.children.as_slice(), vec![0, 2]);
+    assert_eq!(root.children.as_slice(), vec![0, 1]);
     assert_eq!(t.arena[0].values.as_slice(), vec![0]);
-    assert_eq!(t.arena[2].values.as_slice(), vec![10]);
+    assert_eq!(t.arena[1].values.as_slice(), vec![10]);
 }
 
 #[test]
@@ -604,50 +710,66 @@ fn insert_4() {
     for &val in vec![1, 2, 3].iter() {
         t.insert(val);
     }
-    assert_eq!(t.root_id, 1);
-    let root = &t.arena[t.root_id];
-    assert_eq!(root.parent, None);
-    assert_eq!(root.values.as_slice(), vec![2]);
-    assert_eq!(root.children.as_slice(), vec![0, 2]);
+    assert_eq!(t.format_debug(), "#2[2]\n#0[1] #1[3]");
 
     t.insert(4);
-    let right = &t.arena[2];
-    assert_eq!(right.parent, Some(1));
-    assert_eq!(right.values.as_slice(), vec![3, 4]);
+    assert_eq!(t.format_debug(), "#2[2]\n#0[1] #1[3, 4]");
 
     t.insert(5);
-    assert_eq!(t.root_id, 1);
-    let root = &t.arena[t.root_id];
-    assert_eq!(root.parent, None);
-    assert_eq!(root.values.as_slice(), vec![2, 4]);
-    let most_right = &t.arena[root.children[2]];
-    assert_eq!(most_right.parent, Some(t.root_id));
-    assert_eq!(most_right.values.as_slice(), vec![5]);
+    assert_eq!(t.format_debug(), "#2[2, 4]\n#0[1] #1[3] #3[5]");
 
     t.insert(6);
-    assert_eq!(t.root_id, 1);
-    let root = &t.arena[t.root_id];
-    let most_right = &t.arena[root.children[2]];
-    assert_eq!(most_right.parent, Some(t.root_id));
-    assert_eq!(most_right.values.as_slice(), vec![5, 6]);
+    assert_eq!(t.format_debug(), "#2[2, 4]\n#0[1] #1[3] #3[5, 6]");
 
     t.insert(7);
-    assert_eq!(t.root_id, 5);
-    let root = &t.arena[t.root_id];
-    assert_eq!(root.values.as_slice(), vec![4]);
-    let left = &t.arena[root.children[0]];
-    assert_eq!(left.parent, Some(t.root_id));
-    assert_eq!(left.values.as_slice(), vec![2]);
-    let right = &t.arena[root.children[1]];
-    assert_eq!(right.parent, Some(t.root_id));
-    assert_eq!(right.values.as_slice(), vec![6]);
+    assert_eq!(
+        t.format_debug(),
+        "#6[4]\n#2[2] #5[6]\n#0[1] #1[3] #3[5] #4[7]"
+    );
+}
 
-    let most_left = &t.arena[left.children[0]];
-    assert_eq!(most_left.parent, Some(left.idx));
-    assert_eq!(most_left.values.as_slice(), vec![1]);
-    let most_right = &t.arena[right.children[1]];
-    assert_eq!(most_right.parent, Some(right.idx));
-    assert_eq!(most_right.values.as_slice(), vec![7]);
+#[test]
+fn insert_5() {
+    let mut t = Tree::<_, 4>::default();
+    for &val in vec![1, 2, 3].iter() {
+        t.insert(val);
+    }
+    assert_eq!(t.format_debug(), "#0[1, 2, 3]");
+
+    t.insert(4);
+    assert_eq!(t.format_debug(), "#2[3]\n#0[1, 2] #1[4]");
+
+    for &val in vec![5, 6].iter() {
+        t.insert(val);
+    }
+    assert_eq!(t.format_debug(), "#2[3]\n#0[1, 2] #1[4, 5, 6]");
+
+    t.insert(7);
+    assert_eq!(t.format_debug(), "#2[3, 6]\n#0[1, 2] #1[4, 5] #3[7]");
+
+    for &val in vec![8, 9].iter() {
+        t.insert(val);
+    }
+    assert_eq!(t.format_debug(), "#2[3, 6]\n#0[1, 2] #1[4, 5] #3[7, 8, 9]");
+
+    t.insert(10);
+    assert_eq!(
+        t.format_debug(),
+        "#2[3, 6, 9]\n#0[1, 2] #1[4, 5] #3[7, 8] #4[10]"
+    );
+
+    for &val in vec![11, 12].iter() {
+        t.insert(val);
+    }
+    assert_eq!(
+        t.format_debug(),
+        "#2[3, 6, 9]\n#0[1, 2] #1[4, 5] #3[7, 8] #4[10, 11, 12]"
+    );
+    t.insert(13);
+    assert_eq!(
+        t.format_debug(),
+        "#7[9]\n#2[3, 6] #6[12]\n#0[1, 2] #1[4, 5] #3[7, 8] #4[10, 11] #5[13]"
+    );
 }
 
 #[test]
@@ -669,9 +791,9 @@ fn format_debug_1() {
 
     assert_eq!(
         t.format_debug(),
-        "[4]
-[2] [6]
-[1] [3] [5] [7]"
+        "#6[4]
+#2[2] #5[6]
+#0[1] #1[3] #3[5] #4[7]"
     );
 }
 
@@ -684,8 +806,8 @@ fn format_debug_2() {
 
     assert_eq!(
         t.format_debug(),
-        "[2, 4]
-[1] [3] [5, 6]"
+        "#2[2, 4]
+#0[1] #1[3] #3[5, 6]"
     );
 }
 
@@ -698,15 +820,15 @@ fn format_debug_3() {
 
     assert_eq!(
         t.format_debug(),
-        "[2, 4]
-[1] [3] [5]"
+        "#2[2, 4]
+#0[1] #1[3] #3[5]"
     );
 }
 
 #[test]
 fn format_debug_4() {
     let t = Tree::<usize, 3>::default();
-    assert_eq!(t.format_debug(), "[]");
+    assert_eq!(t.format_debug(), "#0[]");
 }
 
 #[test]
@@ -730,16 +852,16 @@ fn delete_1() {
 
     assert_eq!(
         t.format_debug(),
-        "[2, 4]
-[1] [3] [6, 7]"
+        "#2[2, 4]
+#0[1] #1[3] #3[6, 7]"
     );
 
     t.delete(6);
 
     assert_eq!(
         t.format_debug(),
-        "[2, 4]
-[1] [3] [7]"
+        "#2[2, 4]
+#0[1] #1[3] #3[7]"
     );
 }
 
@@ -755,16 +877,16 @@ fn delete_2() {
 
     assert_eq!(
         t.format_debug(),
-        "[2, 4]
-[1] [3] [6, 7]"
+        "#2[2, 4]
+#0[1] #1[3] #3[6, 7]"
     );
 
     t.delete(4);
 
     assert_eq!(
         t.format_debug(),
-        "[2, 6]
-[1] [3] [7]"
+        "#2[2, 6]
+#0[1] #1[3] #3[7]"
     );
 }
 
@@ -780,16 +902,16 @@ fn delete_3() {
 
     assert_eq!(
         t.format_debug(),
-        "[2, 4]
-[1] [3] [6, 7]"
+        "#2[2, 4]
+#0[1] #1[3] #3[6, 7]"
     );
 
     t.delete(3);
 
     assert_eq!(
         t.format_debug(),
-        "[2, 6]
-[1] [4] [7]"
+        "#2[2, 6]
+#0[1] #1[4] #3[7]"
     );
 }
 
@@ -805,16 +927,16 @@ fn delete_4() {
 
     assert_eq!(
         t.format_debug(),
-        "[2, 4]
-[1] [3] [6, 7]"
+        "#2[2, 4]
+#0[1] #1[3] #3[6, 7]"
     );
 
     t.delete(1);
 
     assert_eq!(
         t.format_debug(),
-        "[4]
-[2, 3] [6, 7]"
+        "#2[4]
+#0[2, 3] #3[6, 7]"
     );
 }
 
@@ -828,16 +950,16 @@ fn delete_5() {
 
     assert_eq!(
         t.format_debug(),
-        "[2, 4]
-[1] [3] [6]"
+        "#2[2, 4]
+#0[1] #1[3] #3[6]"
     );
 
     t.delete(3);
 
     assert_eq!(
         t.format_debug(),
-        "[4]
-[1, 2] [6]"
+        "#2[4]
+#0[1, 2] #3[6]"
     );
 }
 
@@ -846,21 +968,22 @@ fn delete_6() {
     let mut t = Tree::<_, 3>::default();
     for val in 1..8 {
         t.insert(val);
+        debug!(t.format_debug());
     }
 
     assert_eq!(
         t.format_debug(),
-        "[4]
-[2] [6]
-[1] [3] [5] [7]"
+        "#6[4]
+#2[2] #5[6]
+#0[1] #1[3] #3[5] #4[7]"
     );
 
     t.delete(7);
 
     assert_eq!(
         t.format_debug(),
-        "[2, 4]
-[1] [3] [5, 6]"
+        "#2[2, 4]
+#0[1] #1[3] #3[5, 6]"
     );
 }
 
@@ -873,18 +996,18 @@ fn delete_7() {
 
     assert_eq!(
         t.format_debug(),
-        "[2]
-[1] [3]"
+        "#2[2]
+#0[1] #1[3]"
     );
 
     t.delete(2);
-    assert_eq!(t.format_debug(), "[1, 3]");
+    assert_eq!(t.format_debug(), "#0[1, 3]");
 
     t.delete(1);
-    assert_eq!(t.format_debug(), "[3]");
+    assert_eq!(t.format_debug(), "#0[3]");
 
     t.delete(3);
-    assert_eq!(t.format_debug(), "[]");
+    assert_eq!(t.format_debug(), "#0[]");
 }
 
 #[test]
@@ -896,15 +1019,15 @@ fn delete_8() {
 
     assert_eq!(
         t.format_debug(),
-        "[3]
-[1, 2] [4]"
+        "#2[3]
+#0[1, 2] #1[4]"
     );
     t.delete(4);
 
     assert_eq!(
         t.format_debug(),
-        "[2]
-[1] [3]"
+        "#2[2]
+#0[1] #1[3]"
     );
 }
 
@@ -917,18 +1040,18 @@ fn delete_9_rotate_left() {
 
     assert_eq!(
         t.format_debug(),
-        "[4]
-[2] [6, 8]
-[1] [3] [5] [7] [9]"
+        "#6[4]
+#2[2] #5[6, 8]
+#0[1] #1[3] #3[5] #4[7] #7[9]"
     );
 
     t.delete(2);
 
     assert_eq!(
         t.format_debug(),
-        "[6]
-[4] [8]
-[1, 3] [5] [7] [9]"
+        "#6[6]
+#2[4] #5[8]
+#0[1, 3] #3[5] #4[7] #7[9]"
     );
 
     let root = &t.arena[t.root_id];
@@ -949,18 +1072,18 @@ fn delete_10_rotate_right() {
 
     assert_eq!(
         t.format_debug(),
-        "[6]
-[2, 4] [8]
-[1] [3] [5] [7] [9]"
+        "#6[6]
+#2[2, 4] #5[8]
+#0[1] #7[3] #4[5] #3[7] #1[9]"
     );
 
     t.delete(8);
 
     assert_eq!(
         t.format_debug(),
-        "[4]
-[2] [6]
-[1] [3] [5] [7, 9]"
+        "#6[4]
+#2[2] #5[6]
+#0[1] #7[3] #4[5] #3[7, 9]"
     );
 
     let root = &t.arena[t.root_id];
@@ -999,7 +1122,55 @@ mod tests {
             t.delete(val);
         }
 
-        assert_eq!(t.format_debug(), "[]");
+        assert_eq!(t.format_debug(), "#0[]");
+    }
+
+    #[test]
+    fn huge_insert_delete() {
+        use std::time::Instant;
+
+        let vals: Vec<usize> = (0..1_000_000).collect();
+
+        let mut t = Tree::<_, 256>::default();
+        let now = Instant::now();
+        for &val in vals.iter() {
+            t.insert(val)
+        }
+        println!("{}", now.elapsed().as_millis());
+
+        let now = Instant::now();
+        for &val in vals.iter() {
+            t.delete(val);
+        }
+        println!("{}", now.elapsed().as_millis());
+    }
+
+    #[test]
+    fn huge_insert() {
+        use std::time::Instant;
+
+        let vals: Vec<usize> = (0..1_000_000).collect();
+
+        let mut t = Tree::<_, 256>::default();
+        let now = Instant::now();
+        for &val in vals.iter() {
+            t.insert(val)
+        }
+        println!("{}", now.elapsed().as_millis());
+    }
+
+    #[test]
+    fn huge_rand_insert() {
+        use std::time::Instant;
+
+        let vals = rand_vec(1_000_000, 0);
+
+        let mut t = Tree::<_, 256>::default();
+        let now = Instant::now();
+        for &val in vals.iter() {
+            t.insert(val)
+        }
+        println!("{}", now.elapsed().as_millis());
     }
 }
 
@@ -1012,9 +1183,9 @@ fn sibling() {
 
     assert_eq!(
         t.format_debug(),
-        "[4]
-[2] [6]
-[1] [3] [5] [7]"
+        "#6[4]
+#2[2] #5[6]
+#0[1] #1[3] #3[5] #4[7]"
     );
 
     let root = &t.arena[t.root_id];
