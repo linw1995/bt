@@ -589,6 +589,31 @@ where
         todo!();
     }
 
+    pub fn get(&self, value: T) -> Option<T> {
+        let mut cur = &self.arena[self.root_id];
+        loop {
+            let insert_idx = {
+                let mut low = 0;
+                let mut high = cur.values.len();
+                let mut median = ((high - low) / 2) + low;
+                while low < high {
+                    match value.cmp(&cur.values[median]) {
+                        Ordering::Less => high = median,
+                        Ordering::Equal => return Some(cur.values[median]),
+                        Ordering::Greater => low = median + 1,
+                    };
+                    median = ((high - low) / 2) + low;
+                }
+                median
+            };
+            if !cur.is_leaf() {
+                cur = &self.arena[cur.children[insert_idx]];
+                continue;
+            }
+            return None;
+        }
+    }
+
     pub fn traversal_bfs(&self) -> Vec<T> {
         use std::collections::VecDeque;
         let mut q = VecDeque::with_capacity(self.arena.len());
@@ -1171,6 +1196,29 @@ mod tests {
             t.insert(val)
         }
         println!("{}", now.elapsed().as_millis());
+    }
+
+    #[test]
+    fn huge_rand_get() {
+        use std::time::Instant;
+
+        let vals = rand_vec(1_000_000, 0);
+
+        let mut t = Tree::<_, 256>::default();
+        let now = Instant::now();
+        for &val in vals.iter() {
+            t.insert(val)
+        }
+        println!("{}", now.elapsed().as_millis());
+
+        let vals = rand_vec(1_000_000, 1);
+        let now = Instant::now();
+        for &val in vals.iter() {
+            assert_eq!(t.get(val).is_some(), true);
+        }
+        println!("{}", now.elapsed().as_millis());
+
+        assert_eq!(t.get(1_000_001).is_none(), true);
     }
 }
 
