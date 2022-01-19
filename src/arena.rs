@@ -79,22 +79,10 @@ where
 {
     fn insert_into(&mut self, cur_id: usize, value: T) -> Option<(T, usize)> {
         let cur = &self.arena[cur_id];
-        let insert_idx = {
-            let mut low = 0;
-            let mut high = cur.values.len();
-            let mut median = ((high - low) / 2) + low;
-            while low < high {
-                match value.cmp(&cur.values[median]) {
-                    Ordering::Less => high = median,
-                    Ordering::Equal => return None,
-                    Ordering::Greater => low = median + 1,
-                };
-                median = ((high - low) / 2) + low;
-            }
-            median
-        };
-        debug!(&cur, value, insert_idx);
-
+        let (insert_idx, found) = Self::binary_search(&cur.values, value);
+        if found {
+            return None;
+        }
         let (value, value_right_child_id) = if cur.is_leaf() {
             (value, None)
         } else {
@@ -280,61 +268,74 @@ where
         };
     }
 
-    pub fn delete(&mut self, val: T) -> bool {
-        match self.search(val) {
-            (_, _, false) => false,
-            (node_id, value_idx, true) => {
-                let node_id = self.delete_value(node_id, value_idx);
-                self.rebalance(node_id);
-                true
-            }
+    fn binary_search<const N: usize>(array: &ArrayVec<T, N>, value: T) -> (usize, bool) {
+        let mut low = 0;
+        let mut high = array.len();
+        let mut median = ((high - low) / 2) + low;
+        while low < high {
+            match value.cmp(&array[median]) {
+                Ordering::Less => high = median,
+                Ordering::Equal => return (median, true),
+                Ordering::Greater => low = median + 1,
+            };
+            median = ((high - low) / 2) + low;
+        }
+        (median, false)
+    }
+
+    fn delete_into(&mut self, node_id: usize, val: T) -> Option<T> {
+        let cur = &self.arena[node_id];
+        let (index, found) = Self::binary_search(&cur.values, val);
+        if found {
+            let cur = &mut self.arena[node_id];
+
+            // find the correct value to fix vacant space
+            let (from_id, deleted_value) = if cur.is_leaf() {
+                (cur.idx, cur.values.remove(index))
+            } else {
+                let (from_id, from_index) = match self.adjacent_children(node_id, index) {
+                    (Some(&left_id), None) => {
+                        let (most_right_id, _) = self.most_right(left_id);
+                        (most_right_id, self.arena[most_right_id].values.len() - 1)
+                    }
+                    (Some(&left_id), Some(&right_id)) => {
+                        let (most_right_id, most_right_depth) = self.most_right(left_id);
+                        let (most_left_id, most_left_depth) = self.most_left(right_id);
+                        // Taking the value from the less depth node
+                        // can rebalance faster than taking the other way.
+                        if most_left_depth > most_right_depth {
+                            (most_right_id, self.arena[most_right_id].values.len() - 1)
+                        } else {
+                            (most_left_id, 0)
+                        }
+                    }
+                    (None, _) => unreachable!(),
+                };
+
+                let new_separator_value = {
+                    let from_node = &mut self.arena[from_id];
+                    from_node.values.remove(from_index)
+                };
+
+                let node = &mut self.arena[node_id];
+                let deleted_value = std::mem::replace(&mut node.values[index], new_separator_value);
+
+                (from_id, deleted_value)
+            };
+
+            self.rebalance(from_id);
+
+            Some(deleted_value)
+        } else if !cur.is_leaf() {
+            let child_id = cur.children[index];
+            self.delete_into(child_id, val)
+        } else {
+            None
         }
     }
 
-    fn delete_value(&mut self, node_id: usize, value_idx: usize) -> usize {
-        {
-            let node = &mut self.arena[node_id];
-            node.values.remove(value_idx);
-        }
-        let node = &self.arena[node_id];
-        if node.is_leaf() {
-            node_id
-        } else {
-            // The internal node needs to find a value from children to fill the void.
-            let (from_id, from_value_idx) = match self.adjacent_children(node_id, value_idx) {
-                (Some(&left_id), None) => {
-                    let (most_right_id, _) = self.most_right(left_id);
-                    (most_right_id, self.arena[most_right_id].values.len() - 1)
-                }
-                (Some(&left_id), Some(&right_id)) => {
-                    let (most_right_id, most_right_depth) = self.most_right(left_id);
-                    let (most_left_id, most_left_depth) = self.most_left(right_id);
-                    // Taking the value from the less depth node
-                    // can rebalance faster than taking the other way.
-                    if most_left_depth > most_right_depth {
-                        (most_right_id, self.arena[most_right_id].values.len() - 1)
-                    } else {
-                        (most_left_id, 0)
-                    }
-                }
-                (None, Some(&right_id)) => {
-                    let (most_left_id, _) = self.most_left(right_id);
-                    (most_left_id, 0)
-                }
-                (None, None) => unreachable!(),
-            };
-
-            let new_separator_value = {
-                let from_node = &mut self.arena[from_id];
-                from_node.values.remove(from_value_idx)
-            };
-
-            let node = &mut self.arena[node_id];
-            node.values.insert(value_idx, new_separator_value);
-
-            // Return the leaf node for rebalancing later
-            from_id
-        }
+    pub fn delete(&mut self, val: T) -> Option<T> {
+        self.delete_into(self.root_id, val)
     }
 
     fn rebalance(&mut self, node_id: usize) {
@@ -532,7 +533,7 @@ where
                 },
             )
         } else {
-            unreachable!();
+            (None, None)
         }
     }
 
@@ -556,35 +557,6 @@ where
         (cur.idx, depth)
     }
 
-    /// locate the (parent_value_idx, node_id, value_idx) for inserting the value.
-    fn search(&self, val: T) -> (usize, usize, bool) {
-        let mut cur = &self.arena[self.root_id];
-        loop {
-            // find the insert index of value in the current node values
-            let insert_idx = {
-                let mut low = 0;
-                let mut high = cur.values.len();
-                let mut median = ((high - low) / 2) + low;
-                while low < high {
-                    match val.cmp(&cur.values[median]) {
-                        Ordering::Less => high = median,
-                        Ordering::Equal => return (cur.idx, median, true),
-                        Ordering::Greater => low = median + 1,
-                    };
-                    median = ((high - low) / 2) + low;
-                }
-                median
-            };
-
-            // try to find a space for inserting the value from the left sub-tree
-            if !cur.is_leaf() {
-                cur = &self.arena[cur.children[insert_idx]];
-                continue;
-            }
-            return (cur.idx, insert_idx, false);
-        }
-    }
-
     pub fn range(&self, _begin: T, _end: T) -> Vec<T> {
         todo!();
     }
@@ -592,20 +564,10 @@ where
     pub fn get(&self, value: T) -> Option<T> {
         let mut cur = &self.arena[self.root_id];
         loop {
-            let insert_idx = {
-                let mut low = 0;
-                let mut high = cur.values.len();
-                let mut median = ((high - low) / 2) + low;
-                while low < high {
-                    match value.cmp(&cur.values[median]) {
-                        Ordering::Less => high = median,
-                        Ordering::Equal => return Some(cur.values[median]),
-                        Ordering::Greater => low = median + 1,
-                    };
-                    median = ((high - low) / 2) + low;
-                }
-                median
-            };
+            let (insert_idx, found) = Self::binary_search(&cur.values, value);
+            if found {
+                return Some(cur.values[insert_idx]);
+            }
             if !cur.is_leaf() {
                 cur = &self.arena[cur.children[insert_idx]];
                 continue;
@@ -862,7 +824,7 @@ fn delete_notfound() {
     for val in 1..4 {
         t.insert(val);
     }
-    assert_eq!(t.delete(4), false);
+    assert_eq!(t.delete(4).is_some(), false);
 }
 
 #[test]
@@ -1249,10 +1211,7 @@ fn sibling() {
     assert_eq!(right_idx, Some(1));
     assert_eq!(right_right_id, None);
 
-    let (node_id, value_idx, found) = t.search(3);
-    assert_eq!(found, true);
-    assert_eq!(value_idx, 0);
-    let (left_node_id, node_idx, right_node_id) = t.sibling(node_id);
+    let (left_node_id, node_idx, right_node_id) = t.sibling(1);
     assert_ne!(left_node_id, None);
     assert_eq!(t.arena[left_node_id.unwrap()].values.as_slice(), vec![1]);
     assert_eq!(node_idx, Some(1));
